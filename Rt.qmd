@@ -1,0 +1,139 @@
+---
+title: "Measles"
+author: "Ánh Huỳnh"
+format: 
+  html:
+    code-fold: false
+    fig-format: svg
+    df-print: paged
+    warning: false 
+    toc: true
+    embed_resources: true
+editor: visual
+---
+
+# Measles
+
+## Serial interval
+
+Dựa vào bài báo của tác giả [Lee Worden et al. (2019)](https://www.sciencedirect.com/science/article/pii/S1755436519300507?via%3Dihub#bib0055) có serial interval với **mean = 14.5** và **sd =3.25**
+
+## Estimates R~t~
+
+**Import data**
+
+```{r}
+library(readxl)
+df <- read_xlsx("C:/Users/Admin/OneDrive - UMP/Desktop/Measles/data/linelist_measles_hcmc.xlsx",sheet = "DS 2024")
+head(df)
+```
+
+**Clean data**
+
+```{r}
+library(janitor)
+df <- clean_names(df)
+df$dates <- df$ngay_khoi_phat_hieu_chinh
+df1 <- df[,c("gioi_tinh","dates")]
+head(df1)
+```
+
+```{r}
+library(dplyr)
+df_convert <- group_by(df, dates)
+df_covert <- summarise(df_convert,I=n())
+head(df_covert)
+
+```
+
+**Plot data**
+
+```{r}
+library(ggplot2)
+ggplot(df_covert,aes(x=dates,y=I)) +
+  geom_point() +
+  labs(x="dates", y="cases") + 
+  theme_light()
+```
+
+**Estimates R~t~**
+
+```{r}
+library(EpiEstim)
+library(tidyr)
+df_covert$dates <- as.Date(df_covert$dates)
+df_complete <- complete(df_covert, dates = seq(min(dates), max(dates),by="day"))
+df_complete <- replace_na(df_complete,list( I=0))
+
+mod <- estimate_R(
+  incid= df_complete,
+  method= "parametric_si",
+  config = make_config(list(mean_si=14.5, std_si= 3.2)
+  )
+)
+```
+
+**Plot R~t~**
+
+```{r}
+plot(mod)
+```
+
+## Select the time period with consecutive cases
+
+**Split data**
+
+```{r}
+
+dff <- filter(df_complete, dates >= "2024-05-23")
+
+mod <- estimate_R(
+  incid= dff,
+  method= "parametric_si",
+  config = make_config(list(mean_si=14.5, std_si= 3.2)
+  )
+)
+
+```
+
+Chọn data để vẽ 2 plot
+
+```{r}
+head(mod$R)
+
+rt_q1 <- mod$R$`Quantile.0.025(R)`
+rt_q3 <- mod$R$`Quantile.0.975(R)`
+rt <- mod$R$`Mean(R)`
+
+# Tạo thêm dữ liệu để 39 dòng để nối dữ liệu với 39 ngày 
+rt <- c(rt,rep(NA,7))
+rt_q1 <- c(rt_q1,rep(NA,7))
+rt_q3 <- c(rt_q3, rep(NA,7))
+
+df_rt <- data.frame(dff,rt,rt_q1,rt_q3)
+head(df_rt)
+```
+
+**Plot**
+
+```{r}
+library(patchwork)
+library(lubridate)
+
+p1 <- ggplot(df_rt, aes(x= dates, y= I)) +
+  geom_histogram(stat = "identity", binwidth = 1, width=1, fill ="lightpink", color= "black") +
+  labs(x="Day", y="Incidence")+
+  theme_minimal() + scale_x_date(date_labels = "%b %d", date_breaks = "1 week", limits = c(ymd("2024-05-23"),ymd("2024-07-01")))
+
+p2 <- ggplot(df_rt,aes(x=dates)) +
+  geom_ribbon(aes(ymin=rt_q1,ymax=rt_q3),fill="lightpink",alpha=0.7) +
+  geom_line(aes(y= rt), color ="hotpink") +
+  labs(x="Day", y="Rt") +
+  theme_minimal() + 
+  scale_x_date(date_labels = "%b %d", date_breaks = "1 week", limits = c(ymd("2024-05-23"),ymd("2024-07-01"))) +
+  scale_y_continuous(limits = c(0,15))
+
+p1/p2
+
+               
+```
